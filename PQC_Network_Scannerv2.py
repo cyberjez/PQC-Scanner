@@ -12,11 +12,184 @@ import subprocess
 import shutil
 import os
 import sys
+import time
+import random
 
 from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import rsa, ec
 from cryptography.hazmat.backends import default_backend
 import re
+
+
+# IDS-Safe Throttling Modes Configuration
+THROTTLING_MODES = {
+    "Normal": {
+        "name": "Normal (No Throttling)",
+        "description": "Full speed scanning - may trigger IDS alerts",
+        "delay_min": 0.0,
+        "delay_max": 0.0,
+        "jitter": 0.0,
+        "adaptive": False
+    },
+    "Slow": {
+        "name": "Slow (Conservative)",
+        "description": "Fixed 2-5 second delays between scans",
+        "delay_min": 2.0,
+        "delay_max": 5.0,
+        "jitter": 0.5,
+        "adaptive": False
+    },
+    "Stealth": {
+        "name": "Stealth (Very Slow)",
+        "description": "Random 5-15 second delays for maximum stealth",
+        "delay_min": 5.0,
+        "delay_max": 15.0,
+        "jitter": 2.0,
+        "adaptive": False
+    },
+    "Random": {
+        "name": "Random (Variable)",
+        "description": "Randomized 1-10 second delays to appear organic",
+        "delay_min": 1.0,
+        "delay_max": 10.0,
+        "jitter": 3.0,
+        "adaptive": False
+    },
+    "Adaptive": {
+        "name": "Adaptive (Smart)",
+        "description": "Adjusts timing based on responses (slow start)",
+        "delay_min": 1.0,
+        "delay_max": 8.0,
+        "jitter": 2.0,
+        "adaptive": True
+    }
+}
+
+
+# ============================================================================
+# SCAN PROFILES DOCUMENTATION
+# ============================================================================
+# Three pre-configured scan profiles are available for different operational
+# scenarios. Each profile automatically configures thread count, rate limiting,
+# and timing jitter parameters.
+#
+# AGGRESSIVE PROFILE:
+# - Use Case: Internal networks with no IDS/IPS, time-critical assessments
+# - Parameters: 200 threads, 100 req/s, 0.0s jitter, IDS-safe disabled
+# - Characteristics:
+#   * Maximum scan speed - completes large network scans quickly
+#   * High resource utilization on scanning host
+#   * WILL trigger IDS/IPS alerts and may be blocked
+#   * Suitable for authorized testing in controlled environments only
+#   * Risk: May overwhelm target systems or network infrastructure
+#
+# BALANCED PROFILE (DEFAULT):
+# - Use Case: General-purpose scanning, moderate stealth requirements
+# - Parameters: 50 threads, 20 req/s, 0.05s jitter, IDS-safe disabled
+# - Characteristics:
+#   * Good balance between speed and stealth
+#   * Moderate resource usage
+#   * May trigger some IDS alerts but less aggressive than full-speed scan
+#   * Reasonable for routine security assessments in trusted environments
+#   * Suitable for most enterprise scanning scenarios
+#
+# IDS-SAFE PROFILE:
+# - Use Case: Sensitive networks, environments with active IDS/IPS monitoring
+# - Parameters: 10 threads, 3 req/s, 0.2s jitter, IDS-safe enabled
+# - Characteristics:
+#   * Maximum stealth - designed to evade detection
+#   * Low resource utilization and minimal network impact
+#   * Significantly longer scan duration (10-50x slower than Aggressive)
+#   * Timing randomization makes traffic appear more organic
+#   * Best for: Red team operations, external assessments, monitored networks
+#   * Note: Advanced behavioral IDS may still detect patterns
+#
+# CUSTOMIZATION:
+# After selecting a profile, users can manually adjust any parameter without
+# changing the profile selection. Profile presets are only reapplied when
+# explicitly selecting a different profile from the dropdown.
+# ============================================================================
+
+
+# ============================================================================
+# IDS-SAFE MODE DOCUMENTATION
+# ============================================================================
+# IDS-safe mode is designed to reduce the likelihood of triggering Intrusion
+# Detection Systems (IDS) and Intrusion Prevention Systems (IPS) during
+# network scanning operations.
+#
+# PURPOSE:
+# - Avoid detection by signature-based IDS/IPS that monitor for rapid
+#   connection attempts or port scanning patterns
+# - Reduce alert fatigue for security teams by blending scan traffic with
+#   normal network activity
+# - Enable stealthy reconnaissance in sensitive environments where aggressive
+#   scanning may be flagged or blocked
+#
+# HOW IT WORKS:
+# The RateLimiter class enforces two key mechanisms:
+#
+# 1. RATE PACING:
+#    - Limits the maximum number of connection attempts per second
+#    - Enforces a minimum time interval between successive operations
+#    - Thread-safe implementation ensures rate limits are respected even
+#      when using parallel scanning threads
+#    - Typical IDS-safe rates: 1-10 requests/second (vs. 100+ without limiting)
+#
+# 2. TIMING JITTER:
+#    - Adds random variance to connection timing (± jitter seconds)
+#    - Prevents predictable, fixed-interval patterns that IDS can detect
+#    - Makes scan traffic appear more "organic" and less automated
+#    - Randomization breaks timing signatures used by behavioral IDS
+#
+# USAGE RECOMMENDATIONS:
+# - Standard stealth: 5 req/s with 0.1s jitter
+# - High stealth: 1-2 req/s with 0.5-1.0s jitter
+# - Paranoid mode: <1 req/s with 2-5s jitter
+# - Use fewer parallel threads (5-10) when IDS-safe mode is enabled
+#
+# TRADE-OFFS:
+# - Significantly increases scan duration
+# - May still be detected by advanced behavioral analysis
+# - Not a substitute for proper authorization and compliance
+# ============================================================================
+
+
+class RateLimiter:
+    """Rate limiter for IDS-safe scanning with jitter support.
+    
+    Enforces maximum request rate and adds timing jitter to reduce IDS/IPS
+    detection probability during network scanning operations.
+    """
+    def __init__(self, max_rate: float, jitter: float = 0.0):
+        """
+        Args:
+            max_rate: Maximum requests per second (e.g., 5.0 for 5 req/s)
+            jitter: Random jitter in seconds to add/subtract from delay (e.g., 0.1)
+        """
+        self.max_rate = max_rate
+        self.jitter = jitter
+        self.min_interval = 1.0 / max_rate if max_rate > 0 else 0
+        self.last_call = 0
+        self.lock = threading.Lock()
+    
+    def wait(self):
+        """Block until enough time has passed to respect the rate limit."""
+        with self.lock:
+            now = time.time()
+            time_since_last = now - self.last_call
+            
+            # Calculate delay with jitter
+            delay = self.min_interval
+            if self.jitter > 0:
+                jitter_amount = random.uniform(-self.jitter, self.jitter)
+                delay = max(0, delay + jitter_amount)
+            
+            # Wait if needed
+            if time_since_last < delay:
+                time.sleep(delay - time_since_last)
+            
+            self.last_call = time.time()
 
 
 # Canonical OID Registry for Post-Quantum Cryptography
@@ -394,9 +567,44 @@ def analyze_cert_chain(cert_chain_der: List[bytes], cipher_info: Optional[Tuple]
     return chain_details, any_pqc, pqc_summary
 
 
-def is_port_open(host: str, port: int, timeout: float = 0.3) -> bool:
+def apply_throttling(mode_config: dict, scan_count: int = 0, error_count: int = 0):
+    """Apply IDS-safe throttling delay based on selected mode.
+    
+    Args:
+        mode_config: Throttling configuration dictionary
+        scan_count: Number of scans completed (for adaptive mode)
+        error_count: Number of errors encountered (for adaptive mode)
+    """
+    if mode_config["delay_min"] == 0 and mode_config["delay_max"] == 0:
+        return  # No throttling
+    
+    # Calculate base delay
+    base_delay = random.uniform(mode_config["delay_min"], mode_config["delay_max"])
+    
+    # Add jitter for more organic timing
+    if mode_config["jitter"] > 0:
+        jitter = random.uniform(-mode_config["jitter"], mode_config["jitter"])
+        base_delay = max(0.1, base_delay + jitter)  # Ensure minimum 0.1s delay
+    
+    # Adaptive throttling - adjust based on scan behavior
+    if mode_config["adaptive"]:
+        # Start slower (first 10 scans)
+        if scan_count < 10:
+            base_delay *= 1.5
+        # Slow down if encountering errors (possible IDS detection)
+        if error_count > 0 and scan_count > 0:
+            error_ratio = error_count / scan_count
+            if error_ratio > 0.2:  # More than 20% errors
+                base_delay *= 2.0  # Double the delay
+    
+    time.sleep(base_delay)
+
+
+def is_port_open(host: str, port: int, timeout: float = 0.3, rate_limiter=None) -> bool:
     """Check if a port is open on the host."""
     try:
+        if rate_limiter:
+            rate_limiter.wait()
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
         result = sock.connect_ex((host, port))
@@ -506,12 +714,29 @@ def resolve_hostname(ip: str) -> Optional[str]:
         return None
 
 
-def analyze_certificate(host: str, port: int) -> CertAnalysis:
+def analyze_certificate(host: str, port: int, throttle_config: Optional[dict] = None, scan_stats: Optional[dict] = None, rate_limiter=None) -> CertAnalysis:
+    """Analyze certificate with optional IDS-safe throttling.
+    
+    Args:
+        host: Target IP/hostname
+        port: Target port
+        throttle_config: Optional throttling mode configuration
+        scan_stats: Optional dict with 'count' and 'errors' for adaptive throttling
+        rate_limiter: Optional rate limiter for controlling scan rate
+    """
+    # Apply throttling delay before scanning
+    if throttle_config:
+        scan_count = scan_stats.get('count', 0) if scan_stats else 0
+        error_count = scan_stats.get('errors', 0) if scan_stats else 0
+        apply_throttling(throttle_config, scan_count, error_count)
+    
     # Initial hostname resolution
     hostname = resolve_hostname(host)
     device_type = None
     
     try:
+        if rate_limiter:
+            rate_limiter.wait()
         cert_chain_der, cipher_info, protocol_version, _ = fetch_server_certificate(host, port)
     except Exception as e:
         return CertAnalysis(
@@ -868,30 +1093,52 @@ class NetworkScannerGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("PQC Network Scanner")
-        self.root.geometry("950x750")
+        self.root.geometry("1000x700")
         self.root.configure(bg='#f0f0f0')
         self.scan_cancelled = False
         self.max_workers = 20  # Number of parallel threads
 
-        # Header
-        header_frame = tk.Frame(root, bg='#000000', height=160)
+        # Header (fixed at top, not scrollable)
+        header_frame = tk.Frame(root, bg='#000000', height=100)
         header_frame.pack(fill='x')
         header_frame.pack_propagate(False)
         
         # Text container
         text_container = tk.Frame(header_frame, bg='#000000')
-        text_container.pack(expand=True, fill='both', pady=10)
+        text_container.pack(expand=True, fill='both', pady=5)
         
         header_label = tk.Label(text_container, text="PQC Network Scanner", 
-                                font=("Arial", 20, "bold"), fg="#C7AE6E", bg='#000000', anchor='center')
-        header_label.pack(expand=True, pady=(25, 2))
+                                font=("Arial", 16, "bold"), fg="#C7AE6E", bg='#000000', anchor='center')
+        header_label.pack(expand=True, pady=(10, 2))
 
         subtitle = tk.Label(text_container, text="Internal Network TLS Certificate Quantum Vulnerability Assessment", 
-                           font=("Arial", 10), fg="#C7AE6E", bg='#000000', anchor='center')
-        subtitle.pack(expand=True, pady=(0, 25))
+                           font=("Arial", 9), fg="#C7AE6E", bg='#000000', anchor='center')
+        subtitle.pack(expand=True, pady=(0, 10))
 
-        # Input frame
-        input_frame = tk.LabelFrame(root, text="Network Scan Configuration", 
+        # Create main canvas with scrollbar for all content
+        main_canvas = tk.Canvas(root, bg='#f0f0f0', highlightthickness=0)
+        scrollbar = tk.Scrollbar(root, orient="vertical", command=main_canvas.yview)
+        scrollable_frame = tk.Frame(main_canvas, bg='#f0f0f0')
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
+        )
+
+        main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        main_canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Pack canvas and scrollbar
+        scrollbar.pack(side="right", fill="y")
+        main_canvas.pack(side="left", fill="both", expand=True)
+
+        # Enable mouse wheel scrolling
+        def _on_mousewheel(event):
+            main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        main_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        # Input frame (now inside scrollable_frame)
+        input_frame = tk.LabelFrame(scrollable_frame, text="Network Scan Configuration", 
                                    font=("Arial", 11, "bold"),
                                    bg='#f0f0f0', padx=15, pady=15)
         input_frame.pack(padx=20, pady=10, fill='x')
@@ -924,21 +1171,75 @@ class NetworkScannerGUI:
                       variable=self.check_open_var, bg='#f0f0f0',
                       font=("Arial", 9)).grid(row=4, column=1, sticky='w', padx=10, pady=5)
 
+        # Throttling mode selection
+        tk.Label(input_frame, text="IDS-Safe Throttling Mode:", 
+                font=("Arial", 10), bg='#f0f0f0', anchor='w').grid(row=5, column=0, sticky='w', pady=5)
+        
+        self.throttle_mode_var = tk.StringVar(value="Normal")
+        throttle_combo = ttk.Combobox(input_frame, textvariable=self.throttle_mode_var,
+                                     values=list(THROTTLING_MODES.keys()),
+                                     width=15, font=("Arial", 9), state='readonly')
+        throttle_combo.grid(row=5, column=1, padx=10, pady=5, sticky='w')
+        throttle_combo.bind('<<ComboboxSelected>>', self.update_throttle_description)
+        
+        self.throttle_desc_label = tk.Label(input_frame, 
+                text=THROTTLING_MODES["Normal"]["description"], 
+                font=("Arial", 8), bg='#f0f0f0', fg='#666666', wraplength=400, justify='left')
+        self.throttle_desc_label.grid(row=6, column=1, sticky='w', padx=10)
+
+        # Scan Profile selection
+        tk.Label(input_frame, text="Scan Profile:", 
+                font=("Arial", 10), bg='#f0f0f0', anchor='w').grid(row=7, column=0, sticky='w', pady=5)
+        
+        self.scan_profile_var = tk.StringVar(value="Balanced")
+        profile_combo = ttk.Combobox(input_frame, textvariable=self.scan_profile_var,
+                                    values=["Aggressive", "Balanced", "IDS-Safe"],
+                                    width=15, font=("Arial", 9), state='readonly')
+        profile_combo.grid(row=7, column=1, padx=10, pady=5, sticky='w')
+        profile_combo.bind('<<ComboboxSelected>>', self.profile_changed)
+
+        # IDS-safe rate limiting controls
+        self.ids_safe_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(input_frame, text="Enable IDS-safe rate limiting", 
+                      variable=self.ids_safe_var, bg='#f0f0f0',
+                      font=("Arial", 9)).grid(row=8, column=1, sticky='w', padx=10, pady=5)
+
+        tk.Label(input_frame, text="Max connections/sec:", 
+                font=("Arial", 10), bg='#f0f0f0', anchor='w').grid(row=9, column=0, sticky='w', pady=5)
+        
+        self.max_rate_var = tk.DoubleVar(value=5.0)
+        rate_spinbox = tk.Spinbox(input_frame, from_=0.1, to=100.0, increment=0.5,
+                                 textvariable=self.max_rate_var,
+                                 width=10, font=("Arial", 10))
+        rate_spinbox.grid(row=9, column=1, padx=10, pady=5, sticky='w')
+
+        tk.Label(input_frame, text="Rate jitter (seconds):", 
+                font=("Arial", 10), bg='#f0f0f0', anchor='w').grid(row=10, column=0, sticky='w', pady=5)
+        
+        self.jitter_var = tk.DoubleVar(value=0.1)
+        jitter_spinbox = tk.Spinbox(input_frame, from_=0.0, to=5.0, increment=0.05,
+                                    textvariable=self.jitter_var,
+                                    width=10, font=("Arial", 10))
+        jitter_spinbox.grid(row=10, column=1, padx=10, pady=5, sticky='w')
+
         # Thread pool size
         tk.Label(input_frame, text="Parallel threads:", 
-                font=("Arial", 10), bg='#f0f0f0', anchor='w').grid(row=5, column=0, sticky='w', pady=5)
+                font=("Arial", 10), bg='#f0f0f0', anchor='w').grid(row=11, column=0, sticky='w', pady=5)
         
         self.threads_var = tk.IntVar(value=20)
         threads_spinbox = tk.Spinbox(input_frame, from_=1, to=100, textvariable=self.threads_var,
                                      width=10, font=("Arial", 10))
-        threads_spinbox.grid(row=5, column=1, padx=10, pady=5, sticky='w')
+        threads_spinbox.grid(row=11, column=1, padx=10, pady=5, sticky='w')
+
+        tk.Label(input_frame, text="Note: Throttling reduces parallel scanning effectiveness", 
+                font=("Arial", 8), bg='#f0f0f0', fg='#FF9800', wraplength=400, justify='left').grid(row=12, column=1, sticky='w', padx=10)
 
         # Progress bar
         self.progress = ttk.Progressbar(input_frame, mode='determinate', length=400)
-        self.progress.grid(row=6, column=0, columnspan=2, pady=10, padx=10)
+        self.progress.grid(row=13, column=0, columnspan=2, pady=10, padx=10)
 
         # Buttons frame
-        button_frame = tk.Frame(root, bg='#f0f0f0')
+        button_frame = tk.Frame(scrollable_frame, bg='#f0f0f0')
         button_frame.pack(pady=10)
 
         self.btn_scan = tk.Button(button_frame, text='Start Network Scan', 
@@ -968,7 +1269,7 @@ class NetworkScannerGUI:
                  padx=25, pady=10, relief=tk.RAISED, bd=3).grid(row=0, column=4, padx=10)
 
         # Results frame
-        results_frame = tk.LabelFrame(root, text="Scan Results", 
+        results_frame = tk.LabelFrame(scrollable_frame, text="Scan Results", 
                                      font=("Arial", 11, "bold"),
                                      bg='#f0f0f0', padx=10, pady=10)
         results_frame.pack(padx=20, pady=5, fill='both', expand=True)
@@ -978,11 +1279,54 @@ class NetworkScannerGUI:
                                                      bg='#ffffff', height=20)
         self.results_text.pack(fill='both', expand=True)
 
-        # Status bar
+        # Status bar (fixed at bottom, not in scrollable area)
         self.status_label = tk.Label(root, text="Ready to scan network", 
                                     font=("Arial", 9), bg='#f0f0f0', 
-                                    fg='#666666', anchor='w')
-        self.status_label.pack(side='bottom', fill='x', padx=20, pady=5)
+                                    fg='#666666', anchor='w', relief=tk.SUNKEN)
+        self.status_label.pack(side='bottom', fill='x', padx=0, pady=0)
+
+        # Apply default profile settings on initialization
+        # This ensures "Balanced" profile values are applied at startup
+        # User can manually override any setting after this, and those edits
+        # will be preserved unless they explicitly select a different profile
+        self.profile_changed()
+
+    def update_throttle_description(self, event=None):
+        """Update the throttling mode description when selection changes."""
+        mode = self.throttle_mode_var.get()
+        if mode in THROTTLING_MODES:
+            description = THROTTLING_MODES[mode]["description"]
+            self.throttle_desc_label.config(text=description)
+            
+            # Warn if using aggressive throttling with many threads
+            if mode in ["Slow", "Stealth", "Random", "Adaptive"] and self.threads_var.get() > 10:
+                warning = f"{description} (Consider reducing threads to 5-10 for better stealth)"
+                self.throttle_desc_label.config(text=warning, fg='#FF9800')
+            else:
+                self.throttle_desc_label.config(fg='#666666')
+
+    def profile_changed(self, event=None):
+        """Update scan parameters when scan profile is changed."""
+        profile = self.scan_profile_var.get()
+        
+        if profile == "Aggressive":
+            # Aggressive: Maximum speed, no rate limiting
+            self.threads_var.set(200)
+            self.ids_safe_var.set(False)
+            self.max_rate_var.set(100.0)
+            self.jitter_var.set(0.0)
+        elif profile == "Balanced":
+            # Balanced: Moderate speed with some stealth
+            self.threads_var.set(50)
+            self.ids_safe_var.set(False)
+            self.max_rate_var.set(20.0)
+            self.jitter_var.set(0.05)
+        elif profile == "IDS-Safe":
+            # IDS-Safe: Stealthy with rate limiting enabled
+            self.threads_var.set(10)
+            self.ids_safe_var.set(True)
+            self.max_rate_var.set(3.0)
+            self.jitter_var.set(0.2)
 
     def clear_results(self):
         """Clear the results text box."""
@@ -1064,11 +1408,39 @@ class NetworkScannerGUI:
             # Clear previous results
             self.results_text.delete('1.0', tk.END)
 
+            # Get throttling configuration
+            throttle_mode = self.throttle_mode_var.get()
+            throttle_config = THROTTLING_MODES.get(throttle_mode)
+            
+            # Create rate limiter if IDS-safe mode is enabled
+            rate_limiter = None
+            if self.ids_safe_var.get():
+                max_rate = self.max_rate_var.get()
+                jitter = self.jitter_var.get()
+                rate_limiter = RateLimiter(max_rate, jitter)
+                self.status_label.config(
+                    text=f"IDS-safe mode: {max_rate} req/s with {jitter}s jitter",
+                    fg='#FF9800'
+                )
+                self.root.update()
+            
+            # Track scan statistics for adaptive throttling
+            scan_stats = {'count': 0, 'errors': 0}
+            
             # Run scan with thread pool
             results = []
             scanned = 0
             check_open = self.check_open_var.get()
             max_workers = self.threads_var.get()
+            
+            # Adjust thread count warning for throttled scans
+            if throttle_mode != "Normal" and max_workers > 10:
+                response = messagebox.askyesno("Throttling Warning",
+                    f"You've selected {throttle_mode} mode with {max_workers} threads.\n\n"
+                    f"For better IDS evasion, consider using 5-10 threads.\n\n"
+                    f"Continue with current settings?")
+                if not response:
+                    return
 
             # Pre-filter with fast port checks if enabled
             targets_to_scan = []
@@ -1077,7 +1449,7 @@ class NetworkScannerGUI:
                 self.root.update()
                 
                 with ThreadPoolExecutor(max_workers=max_workers * 2) as executor:
-                    port_futures = {executor.submit(is_port_open, ip, port, 0.3): (ip, port) 
+                    port_futures = {executor.submit(is_port_open, ip, port, 0.3, rate_limiter): (ip, port) 
                                    for ip in ips for port in ports}
                     for future in as_completed(port_futures):
                         if future.result():
@@ -1096,10 +1468,10 @@ class NetworkScannerGUI:
             self.progress['maximum'] = len(targets_to_scan)
             self.progress['value'] = 0
             
-            # Execute parallel certificate scanning
+            # Execute parallel certificate scanning with throttling
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = {
-                    executor.submit(analyze_certificate, ip, port): (ip, port)
+                    executor.submit(analyze_certificate, ip, port, throttle_config, scan_stats, rate_limiter): (ip, port)
                     for ip, port in targets_to_scan
                 }
                 
@@ -1128,9 +1500,13 @@ class NetworkScannerGUI:
                     
                     try:
                         result = future.result()
+                        scan_stats['count'] += 1
                         if result and result.success:
                             results.append(result)
+                        else:
+                            scan_stats['errors'] += 1
                     except Exception as e:
+                        scan_stats['errors'] += 1
                         # Silently skip failed scans
                         pass
 
