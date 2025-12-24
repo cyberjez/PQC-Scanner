@@ -1092,41 +1092,62 @@ def format_report(results: List[CertAnalysis]) -> str:
 class NetworkScannerGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("PQC Network Scanner")
-        self.root.geometry("1000x700")
-        self.root.configure(bg='#f0f0f0')
+        self.root.title("PQC Network Scanner 2.0 - Professional Edition")
+        self.root.geometry("1200x750")
+        self.root.configure(bg='#f5f5f5')
+        # Prevent window from shrinking and set minimum size
+        self.root.minsize(1200, 700)
+        # Set window icon (optional - will use default if no icon)
+        try:
+            self.root.iconbitmap(default='shield.ico')
+        except:
+            pass
         self.scan_cancelled = False
         self.max_workers = 20  # Number of parallel threads
 
-        # Header (fixed at top, not scrollable)
-        header_frame = tk.Frame(root, bg='#000000', height=100)
+        # Header (fixed at top, not scrollable) - Professional gradient design
+        header_frame = tk.Frame(root, bg='#1a237e', height=90)
         header_frame.pack(fill='x')
         header_frame.pack_propagate(False)
         
         # Text container
-        text_container = tk.Frame(header_frame, bg='#000000')
+        text_container = tk.Frame(header_frame, bg='#1a237e')
         text_container.pack(expand=True, fill='both', pady=5)
         
-        header_label = tk.Label(text_container, text="PQC Network Scanner", 
-                                font=("Arial", 16, "bold"), fg="#C7AE6E", bg='#000000', anchor='center')
-        header_label.pack(expand=True, pady=(10, 2))
+        # Main title with icon
+        title_frame = tk.Frame(text_container, bg='#1a237e')
+        title_frame.pack(expand=True)
+        
+        header_label = tk.Label(title_frame, text="🛡️ PQC Network Scanner 2.0", 
+                                font=("Segoe UI", 18, "bold"), fg="#ffffff", bg='#1a237e', anchor='center')
+        header_label.pack()
 
-        subtitle = tk.Label(text_container, text="Internal Network TLS Certificate Quantum Vulnerability Assessment", 
-                           font=("Arial", 9), fg="#C7AE6E", bg='#000000', anchor='center')
-        subtitle.pack(expand=True, pady=(0, 10))
+        subtitle = tk.Label(text_container, text="Post-Quantum Cryptography Assessment Platform", 
+                           font=("Segoe UI", 9), fg="#90caf9", bg='#1a237e', anchor='center')
+        subtitle.pack(pady=(0, 5))
+        
+        version_label = tk.Label(text_container, text="Enterprise Edition | v2.0.0", 
+                           font=("Segoe UI", 8), fg="#7986cb", bg='#1a237e', anchor='center')
+        version_label.pack()
 
         # Create main canvas with scrollbar for all content
-        main_canvas = tk.Canvas(root, bg='#f0f0f0', highlightthickness=0)
+        main_canvas = tk.Canvas(root, bg='#f5f5f5', highlightthickness=0)
         scrollbar = tk.Scrollbar(root, orient="vertical", command=main_canvas.yview)
-        scrollable_frame = tk.Frame(main_canvas, bg='#f0f0f0')
+        scrollable_frame = tk.Frame(main_canvas, bg='#f5f5f5')
 
         scrollable_frame.bind(
             "<Configure>",
             lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
         )
 
-        main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas_window = main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         main_canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Make scrollable_frame expand to canvas width
+        def _configure_canvas(event):
+            canvas_width = event.width
+            main_canvas.itemconfig(canvas_window, width=canvas_width)
+        main_canvas.bind('<Configure>', _configure_canvas)
 
         # Pack canvas and scrollbar
         scrollbar.pack(side="right", fill="y")
@@ -1137,153 +1158,200 @@ class NetworkScannerGUI:
             main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         main_canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
-        # Input frame (now inside scrollable_frame)
-        input_frame = tk.LabelFrame(scrollable_frame, text="Network Scan Configuration", 
-                                   font=("Arial", 11, "bold"),
-                                   bg='#f0f0f0', padx=15, pady=15)
-        input_frame.pack(padx=20, pady=10, fill='x')
-
-        # IP Range input
-        tk.Label(input_frame, text="IP Range (CIDR, range, or single IP):", 
-                font=("Arial", 10), bg='#f0f0f0', anchor='w').grid(row=0, column=0, sticky='w', pady=5)
+        # Input frame (now inside scrollable_frame) - Modern card design
+        input_frame = tk.LabelFrame(scrollable_frame, text="⚙️ Network Scan Configuration", 
+                                   font=("Segoe UI", 10, "bold"),
+                                   bg='#ffffff', fg='#1a237e', padx=20, pady=15,
+                                   relief=tk.FLAT, bd=2, highlightbackground='#e0e0e0',
+                                   highlightthickness=1)
+        input_frame.pack(padx=25, pady=10, fill='both', expand=True)
         
-        self.ip_entry = tk.Entry(input_frame, width=40, font=("Arial", 10))
+        # Configure grid to expand column 1 (where inputs are)
+        input_frame.grid_columnconfigure(1, weight=1)
+        input_frame.grid_columnconfigure(0, minsize=200)
+
+        # IP Range input with icon
+        tk.Label(input_frame, text="🌐 IP Range (CIDR, range, or single IP):", 
+                font=("Segoe UI", 9), bg='#ffffff', fg='#424242', anchor='w').grid(row=0, column=0, sticky='w', pady=5)
+        
+        self.ip_entry = tk.Entry(input_frame, width=60, font=("Segoe UI", 9),
+                                relief=tk.SOLID, bd=1, highlightbackground='#9fa8da',
+                                highlightcolor='#3f51b5', highlightthickness=1)
         self.ip_entry.insert(0, "192.168.1.0/24")
-        self.ip_entry.grid(row=0, column=1, padx=10, pady=5, sticky='w')
+        self.ip_entry.grid(row=0, column=1, padx=10, pady=5, sticky='ew')
 
-        tk.Label(input_frame, text="Examples: 192.168.1.0/24, 10.0.0.1-10.0.0.50, 172.16.0.10", 
-                font=("Arial", 8), bg='#f0f0f0', fg='#666666').grid(row=1, column=1, sticky='w', padx=10)
+        tk.Label(input_frame, text="💡 Examples: 192.168.1.0/24, 10.0.0.1-10.0.0.50, 172.16.0.10", 
+                font=("Segoe UI", 7), bg='#ffffff', fg='#757575').grid(row=1, column=1, sticky='w', padx=10)
 
-        # Port input
-        tk.Label(input_frame, text="Ports (comma-separated or range):", 
-                font=("Arial", 10), bg='#f0f0f0', anchor='w').grid(row=2, column=0, sticky='w', pady=5)
+        # Port input with icon
+        tk.Label(input_frame, text="🔌 Ports (comma-separated or range):", 
+                font=("Segoe UI", 9), bg='#ffffff', fg='#424242', anchor='w').grid(row=2, column=0, sticky='w', pady=5)
         
-        self.port_entry = tk.Entry(input_frame, width=40, font=("Arial", 10))
+        self.port_entry = tk.Entry(input_frame, width=60, font=("Segoe UI", 9),
+                                   relief=tk.SOLID, bd=1, highlightbackground='#9fa8da',
+                                   highlightcolor='#3f51b5', highlightthickness=1)
         self.port_entry.insert(0, "443,8443")
-        self.port_entry.grid(row=2, column=1, padx=10, pady=5, sticky='w')
+        self.port_entry.grid(row=2, column=1, padx=10, pady=5, sticky='ew')
 
-        tk.Label(input_frame, text="Examples: 443,8443,10443 or 443-445", 
-                font=("Arial", 8), bg='#f0f0f0', fg='#666666').grid(row=3, column=1, sticky='w', padx=10)
+        tk.Label(input_frame, text="💡 Examples: 443,8443,10443 or 443-445", 
+                font=("Segoe UI", 7), bg='#ffffff', fg='#757575').grid(row=3, column=1, sticky='w', padx=10)
 
         # Options
         self.check_open_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(input_frame, text="Only scan open ports (faster)", 
-                      variable=self.check_open_var, bg='#f0f0f0',
-                      font=("Arial", 9)).grid(row=4, column=1, sticky='w', padx=10, pady=5)
+        tk.Checkbutton(input_frame, text="⚡ Only scan open ports (faster)", 
+                      variable=self.check_open_var, bg='#ffffff', fg='#424242',
+                      font=("Segoe UI", 9), selectcolor='#ffffff',
+                      activebackground='#ffffff').grid(row=4, column=1, sticky='w', padx=10, pady=5)
 
         # Throttling mode selection
-        tk.Label(input_frame, text="IDS-Safe Throttling Mode:", 
-                font=("Arial", 10), bg='#f0f0f0', anchor='w').grid(row=5, column=0, sticky='w', pady=5)
+        tk.Label(input_frame, text="🕐 IDS-Safe Throttling Mode:", 
+                font=("Segoe UI", 9), bg='#ffffff', fg='#424242', anchor='w').grid(row=5, column=0, sticky='w', pady=5)
         
         self.throttle_mode_var = tk.StringVar(value="Normal")
         throttle_combo = ttk.Combobox(input_frame, textvariable=self.throttle_mode_var,
                                      values=list(THROTTLING_MODES.keys()),
-                                     width=15, font=("Arial", 9), state='readonly')
+                                     width=15, font=("Segoe UI", 9), state='readonly')
         throttle_combo.grid(row=5, column=1, padx=10, pady=5, sticky='w')
         throttle_combo.bind('<<ComboboxSelected>>', self.update_throttle_description)
         
         self.throttle_desc_label = tk.Label(input_frame, 
                 text=THROTTLING_MODES["Normal"]["description"], 
-                font=("Arial", 8), bg='#f0f0f0', fg='#666666', wraplength=400, justify='left')
+                font=("Segoe UI", 8), bg='#ffffff', fg='#757575', wraplength=400, justify='left')
         self.throttle_desc_label.grid(row=6, column=1, sticky='w', padx=10)
 
         # Scan Profile selection
-        tk.Label(input_frame, text="Scan Profile:", 
-                font=("Arial", 10), bg='#f0f0f0', anchor='w').grid(row=7, column=0, sticky='w', pady=5)
+        tk.Label(input_frame, text="📊 Scan Profile:", 
+                font=("Segoe UI", 9), bg='#ffffff', fg='#424242', anchor='w').grid(row=7, column=0, sticky='w', pady=5)
         
         self.scan_profile_var = tk.StringVar(value="Balanced")
         profile_combo = ttk.Combobox(input_frame, textvariable=self.scan_profile_var,
                                     values=["Aggressive", "Balanced", "IDS-Safe"],
-                                    width=15, font=("Arial", 9), state='readonly')
+                                    width=15, font=("Segoe UI", 9), state='readonly')
         profile_combo.grid(row=7, column=1, padx=10, pady=5, sticky='w')
         profile_combo.bind('<<ComboboxSelected>>', self.profile_changed)
 
         # IDS-safe rate limiting controls
         self.ids_safe_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(input_frame, text="Enable IDS-safe rate limiting", 
-                      variable=self.ids_safe_var, bg='#f0f0f0',
-                      font=("Arial", 9)).grid(row=8, column=1, sticky='w', padx=10, pady=5)
+        tk.Checkbutton(input_frame, text="🔒 Enable IDS-safe rate limiting", 
+                      variable=self.ids_safe_var, bg='#ffffff', fg='#424242',
+                      font=("Segoe UI", 9), selectcolor='#ffffff',
+                      activebackground='#ffffff').grid(row=8, column=1, sticky='w', padx=10, pady=5)
 
-        tk.Label(input_frame, text="Max connections/sec:", 
-                font=("Arial", 10), bg='#f0f0f0', anchor='w').grid(row=9, column=0, sticky='w', pady=5)
+        tk.Label(input_frame, text="⚡ Max connections/sec:", 
+                font=("Segoe UI", 9), bg='#ffffff', fg='#424242', anchor='w').grid(row=9, column=0, sticky='w', pady=5)
         
         self.max_rate_var = tk.DoubleVar(value=5.0)
         rate_spinbox = tk.Spinbox(input_frame, from_=0.1, to=100.0, increment=0.5,
                                  textvariable=self.max_rate_var,
-                                 width=10, font=("Arial", 10))
+                                 width=10, font=("Segoe UI", 9),
+                                 relief=tk.SOLID, bd=1)
         rate_spinbox.grid(row=9, column=1, padx=10, pady=5, sticky='w')
 
-        tk.Label(input_frame, text="Rate jitter (seconds):", 
-                font=("Arial", 10), bg='#f0f0f0', anchor='w').grid(row=10, column=0, sticky='w', pady=5)
+        tk.Label(input_frame, text="⏱️ Rate jitter (seconds):", 
+                font=("Segoe UI", 9), bg='#ffffff', fg='#424242', anchor='w').grid(row=10, column=0, sticky='w', pady=5)
         
         self.jitter_var = tk.DoubleVar(value=0.1)
         jitter_spinbox = tk.Spinbox(input_frame, from_=0.0, to=5.0, increment=0.05,
                                     textvariable=self.jitter_var,
-                                    width=10, font=("Arial", 10))
+                                    width=10, font=("Segoe UI", 9),
+                                    relief=tk.SOLID, bd=1)
         jitter_spinbox.grid(row=10, column=1, padx=10, pady=5, sticky='w')
 
         # Thread pool size
-        tk.Label(input_frame, text="Parallel threads:", 
-                font=("Arial", 10), bg='#f0f0f0', anchor='w').grid(row=11, column=0, sticky='w', pady=5)
+        tk.Label(input_frame, text="🔄 Parallel threads:", 
+                font=("Segoe UI", 9), bg='#ffffff', fg='#424242', anchor='w').grid(row=11, column=0, sticky='w', pady=5)
         
         self.threads_var = tk.IntVar(value=20)
         threads_spinbox = tk.Spinbox(input_frame, from_=1, to=100, textvariable=self.threads_var,
-                                     width=10, font=("Arial", 10))
+                                     width=10, font=("Segoe UI", 9),
+                                     relief=tk.SOLID, bd=1)
         threads_spinbox.grid(row=11, column=1, padx=10, pady=5, sticky='w')
 
-        tk.Label(input_frame, text="Note: Throttling reduces parallel scanning effectiveness", 
-                font=("Arial", 8), bg='#f0f0f0', fg='#FF9800', wraplength=400, justify='left').grid(row=12, column=1, sticky='w', padx=10)
+        tk.Label(input_frame, text="⚠️ Note: Throttling reduces parallel scanning effectiveness", 
+                font=("Segoe UI", 8), bg='#ffffff', fg='#f57c00', wraplength=400, justify='left').grid(row=12, column=1, sticky='w', padx=10)
 
-        # Progress bar
-        self.progress = ttk.Progressbar(input_frame, mode='determinate', length=400)
-        self.progress.grid(row=13, column=0, columnspan=2, pady=10, padx=10)
+        # Progress bar with modern styling
+        progress_frame = tk.Frame(input_frame, bg='#ffffff')
+        progress_frame.grid(row=13, column=0, columnspan=2, pady=10, padx=10, sticky='ew')
+        input_frame.grid_rowconfigure(13, weight=0)
+        
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure("Custom.Horizontal.TProgressbar",
+                       background='#3f51b5',
+                       troughcolor='#e0e0e0',
+                       bordercolor='#e0e0e0',
+                       lightcolor='#3f51b5',
+                       darkcolor='#3f51b5')
+        
+        self.progress = ttk.Progressbar(progress_frame, mode='determinate',
+                                       style="Custom.Horizontal.TProgressbar")
+        self.progress.pack(fill='x', expand=True)
 
-        # Buttons frame
-        button_frame = tk.Frame(scrollable_frame, bg='#f0f0f0')
-        button_frame.pack(pady=10)
+        # Buttons frame with modern design
+        button_frame = tk.Frame(scrollable_frame, bg='#f5f5f5')
+        button_frame.pack(pady=15, fill='both', padx=20)
+        
+        # Center the buttons
+        button_container = tk.Frame(button_frame, bg='#f5f5f5')
+        button_container.pack(expand=True)
 
-        self.btn_scan = tk.Button(button_frame, text='Start Network Scan', 
+        self.btn_scan = tk.Button(button_container, text='▶️  Start Scan', 
                                  command=self.run_scan_threaded,
-                                 bg='#4CAF50', fg='white', 
-                                 font=("Arial", 11, "bold"), 
-                                 padx=25, pady=10, relief=tk.RAISED, bd=3)
-        self.btn_scan.grid(row=0, column=0, padx=10)
+                                 bg='#4caf50', fg='white', 
+                                 font=("Segoe UI", 10, "bold"), 
+                                 padx=20, pady=12, relief=tk.FLAT,
+                                 cursor='hand2', borderwidth=0,
+                                 activebackground='#45a049')
+        self.btn_scan.grid(row=0, column=0, padx=5)
 
-        self.btn_cancel = tk.Button(button_frame, text='Cancel Scan', 
+        self.btn_cancel = tk.Button(button_container, text='⏸️  Cancel', 
                                     command=self.cancel_scan, state='disabled',
-                                    bg='#FF5722', fg='white', 
-                                    font=("Arial", 11, "bold"), 
-                                    padx=25, pady=10, relief=tk.RAISED, bd=3)
-        self.btn_cancel.grid(row=0, column=1, padx=10)
+                                    bg='#f44336', fg='white', 
+                                    font=("Segoe UI", 10, "bold"), 
+                                    padx=20, pady=12, relief=tk.FLAT,
+                                    cursor='hand2', borderwidth=0,
+                                    activebackground='#d32f2f')
+        self.btn_cancel.grid(row=0, column=1, padx=5)
 
-        tk.Button(button_frame, text='Clear Results', command=self.clear_results,
-                 bg='#FF9800', fg='white', font=("Arial", 11, "bold"), 
-                 padx=25, pady=10, relief=tk.RAISED, bd=3).grid(row=0, column=2, padx=10)
+        tk.Button(button_container, text='🗑️  Clear', command=self.clear_results,
+                 bg='#ff9800', fg='white', font=("Segoe UI", 10, "bold"), 
+                 padx=20, pady=12, relief=tk.FLAT, cursor='hand2', borderwidth=0,
+                 activebackground='#f57c00').grid(row=0, column=2, padx=5)
 
-        tk.Button(button_frame, text='Save Report', command=self.save_report,
-                 bg='#2196F3', fg='white', font=("Arial", 11, "bold"), 
-                 padx=25, pady=10, relief=tk.RAISED, bd=3).grid(row=0, column=3, padx=10)
+        tk.Button(button_container, text='💾  Save Report', command=self.save_report,
+                 bg='#2196f3', fg='white', font=("Segoe UI", 10, "bold"), 
+                 padx=20, pady=12, relief=tk.FLAT, cursor='hand2', borderwidth=0,
+                 activebackground='#1976d2').grid(row=0, column=3, padx=5)
 
-        tk.Button(button_frame, text='Exit', command=root.quit,
-                 bg='#F44336', fg='white', font=("Arial", 11, "bold"), 
-                 padx=25, pady=10, relief=tk.RAISED, bd=3).grid(row=0, column=4, padx=10)
+        tk.Button(button_container, text='❌  Exit', command=root.quit,
+                 bg='#9e9e9e', fg='white', font=("Segoe UI", 10, "bold"), 
+                 padx=20, pady=12, relief=tk.FLAT, cursor='hand2', borderwidth=0,
+                 activebackground='#757575').grid(row=0, column=4, padx=5)
 
-        # Results frame
-        results_frame = tk.LabelFrame(scrollable_frame, text="Scan Results", 
-                                     font=("Arial", 11, "bold"),
-                                     bg='#f0f0f0', padx=10, pady=10)
-        results_frame.pack(padx=20, pady=5, fill='both', expand=True)
+        # Results frame with modern card design
+        results_frame = tk.LabelFrame(scrollable_frame, text="📊 Scan Results", 
+                                     font=("Segoe UI", 10, "bold"),
+                                     bg='#ffffff', fg='#1a237e', padx=15, pady=15,
+                                     relief=tk.FLAT, bd=2, highlightbackground='#e0e0e0',
+                                     highlightthickness=1)
+        results_frame.pack(padx=25, pady=10, fill='both', expand=True)
 
         self.results_text = scrolledtext.ScrolledText(results_frame, wrap='word',
-                                                     font=("Courier New", 9),
-                                                     bg='#ffffff', height=20)
+                                                     font=("Consolas", 9),
+                                                     bg='#fafafa', fg='#212121', height=22,
+                                                     relief=tk.FLAT, bd=0,
+                                                     padx=10, pady=10, width=120)
         self.results_text.pack(fill='both', expand=True)
 
-        # Status bar (fixed at bottom, not in scrollable area)
-        self.status_label = tk.Label(root, text="Ready to scan network", 
-                                    font=("Arial", 9), bg='#f0f0f0', 
-                                    fg='#666666', anchor='w', relief=tk.SUNKEN)
-        self.status_label.pack(side='bottom', fill='x', padx=0, pady=0)
+        # Status bar (fixed at bottom, not in scrollable area) - Modern design
+        status_frame = tk.Frame(root, bg='#263238', height=30)
+        status_frame.pack(side='bottom', fill='x')
+        
+        self.status_label = tk.Label(status_frame, text="✓ Ready to scan network", 
+                                    font=("Segoe UI", 9), bg='#263238', 
+                                    fg='#90caf9', anchor='w', padx=15, pady=5)
+        self.status_label.pack(side='left', fill='both', expand=True)
 
         # Apply default profile settings on initialization
         # This ensures "Balanced" profile values are applied at startup
@@ -1301,9 +1369,9 @@ class NetworkScannerGUI:
             # Warn if using aggressive throttling with many threads
             if mode in ["Slow", "Stealth", "Random", "Adaptive"] and self.threads_var.get() > 10:
                 warning = f"{description} (Consider reducing threads to 5-10 for better stealth)"
-                self.throttle_desc_label.config(text=warning, fg='#FF9800')
+                self.throttle_desc_label.config(text=warning, fg='#f57c00')
             else:
-                self.throttle_desc_label.config(fg='#666666')
+                self.throttle_desc_label.config(fg='#757575')
 
     def profile_changed(self, event=None):
         """Update scan parameters when scan profile is changed."""
@@ -1331,13 +1399,13 @@ class NetworkScannerGUI:
     def clear_results(self):
         """Clear the results text box."""
         self.results_text.delete('1.0', tk.END)
-        self.status_label.config(text="Results cleared. Ready to scan.", fg='#666666')
+        self.status_label.config(text="✓ Results cleared. Ready to scan.", fg='#90caf9')
         self.progress['value'] = 0
 
     def cancel_scan(self):
         """Cancel the ongoing scan."""
         self.scan_cancelled = True
-        self.status_label.config(text="Cancelling scan...", fg='#FF9800')
+        self.status_label.config(text="⏸️ Cancelling scan...", fg='#ffb74d')
 
     def save_report(self):
         """Save the scan results to a file."""
@@ -1359,10 +1427,10 @@ class NetworkScannerGUI:
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(report_content)
                 messagebox.showinfo("Success", f"Report saved successfully to:\n{file_path}")
-                self.status_label.config(text=f"Report saved to {file_path}", fg='#4CAF50')
+                self.status_label.config(text=f"💾 Report saved: {file_path}", fg='#66bb6a')
             except Exception as e:
                 messagebox.showerror("Save Error", f"Failed to save report:\n{e}")
-                self.status_label.config(text="Failed to save report.", fg='#F44336')
+                self.status_label.config(text="❌ Failed to save report.", fg='#ef5350')
 
     def run_scan_threaded(self):
         """Run scan in a separate thread to avoid blocking the GUI."""
@@ -1400,7 +1468,7 @@ class NetworkScannerGUI:
             # Update UI
             self.btn_scan.config(state='disabled')
             self.btn_cancel.config(state='normal')
-            self.status_label.config(text=f"Scanning {len(ips)} IPs on {len(ports)} port(s)...", fg='#FF9800')
+            self.status_label.config(text=f"⌛ Scanning {len(ips)} IPs on {len(ports)} port(s)...", fg='#ffb74d')
             self.progress['maximum'] = total_targets
             self.progress['value'] = 0
             self.root.update()
@@ -1419,8 +1487,8 @@ class NetworkScannerGUI:
                 jitter = self.jitter_var.get()
                 rate_limiter = RateLimiter(max_rate, jitter)
                 self.status_label.config(
-                    text=f"IDS-safe mode: {max_rate} req/s with {jitter}s jitter",
-                    fg='#FF9800'
+                    text=f"🔒 IDS-safe mode: {max_rate} req/s with {jitter}s jitter",
+                    fg='#ffb74d'
                 )
                 self.root.update()
             
@@ -1445,7 +1513,7 @@ class NetworkScannerGUI:
             # Pre-filter with fast port checks if enabled
             targets_to_scan = []
             if check_open:
-                self.status_label.config(text="Pre-scanning for open ports...", fg='#FF9800')
+                self.status_label.config(text="🔍 Pre-scanning for open ports...", fg='#ffb74d')
                 self.root.update()
                 
                 with ThreadPoolExecutor(max_workers=max_workers * 2) as executor:
@@ -1455,7 +1523,7 @@ class NetworkScannerGUI:
                         if future.result():
                             targets_to_scan.append(port_futures[future])
                 
-                self.status_label.config(text=f"Found {len(targets_to_scan)} open ports. Analyzing certificates...", fg='#FF9800')
+                self.status_label.config(text=f"✓ Found {len(targets_to_scan)} open ports. Analyzing certificates...", fg='#66bb6a')
                 self.root.update()
             else:
                 targets_to_scan = [(ip, port) for ip in ips for port in ports]
@@ -1512,7 +1580,7 @@ class NetworkScannerGUI:
 
             if self.scan_cancelled:
                 self.results_text.insert('1.0', "=== SCAN CANCELLED ===\n\n")
-                self.status_label.config(text=f"Scan cancelled. {len(results)} certificates analyzed.", fg='#FF9800')
+                self.status_label.config(text=f"⏸️ Scan cancelled. {len(results)} certificates analyzed.", fg='#ffb74d')
             else:
                 # Format and display results
                 report = format_report(results)
@@ -1520,14 +1588,20 @@ class NetworkScannerGUI:
 
                 # Update status
                 vulnerable_count = sum(1 for r in results if r.quantum_vulnerable)
-                self.status_label.config(
-                    text=f"Scan complete. {len(results)} certificates found, {vulnerable_count} quantum-vulnerable.",
-                    fg='#F44336' if vulnerable_count > 0 else '#4CAF50'
-                )
+                if vulnerable_count > 0:
+                    self.status_label.config(
+                        text=f"⚠️ Scan complete: {len(results)} certificates, {vulnerable_count} quantum-vulnerable",
+                        fg='#ef5350'
+                    )
+                else:
+                    self.status_label.config(
+                        text=f"✓ Scan complete: {len(results)} certificates found, 0 quantum-vulnerable",
+                        fg='#66bb6a'
+                    )
 
         except Exception as e:
             messagebox.showerror("Scan Error", f"An error occurred during scanning:\n{e}")
-            self.status_label.config(text="Scan failed. See error message.", fg='#F44336')
+            self.status_label.config(text="❌ Scan failed. See error message.", fg='#ef5350')
         
         finally:
             self.btn_scan.config(state='normal')
