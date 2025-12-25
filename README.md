@@ -6,4 +6,4 @@ Beyond cryptography, the scanner incorporates intelligent device identification.
 
 The output report contains technical detail with clear, actionable commentary. Each endpoint is assessed for quantum vulnerability, PQC readiness, TLS posture and certificate chain integrity. The report highlights high‑risk configurations, identifies PQC‑enabled or hybrid deployments and provides migration guidance aligned with emerging standards such as ML‑DSA and ML‑KEM. Summary sections consolidate findings across the scanned environment, offering a high‑level view of organisational readiness and exposure.
 
-Version 2.0 is designed to be used on Enterprise networks where IDS/IPS my prove problmatic. So it will slow and randomise scan traffic to avoid triggering IDS/IPS. This applies pacing to both port checks and TLS handshakes and is recommended for production or monitored networks.
+Version 2.0 is designed to be used on Enterprise networks where IDS/IPS my prove problematic. So it will slow and randomise scan traffic to avoid triggering IDS/IPS. This applies pacing to both port checks and TLS handshakes and is recommended for production or monitored networks.
